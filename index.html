@@ -218,7 +218,7 @@
                 <div id="micStatus" class="status-badge">Đang chuẩn bị...</div>
             </div>
             <canvas id="gameCanvas" width="740" height="300"></canvas>
-            <div class="debug-hint">💡 Mẹo: Nhấn phím **Space (Cách)** để test nhảy thủ công.</div>
+            <div class="debug-hint">💡 Mẹo: Nhấn phím **Space (Cách)** để test nhảy nhanh nếu cần.</div>
         </div>
 
         <!-- 3. Màn hình Kết quả -->
@@ -246,11 +246,72 @@
         let currentWordIndex = 0;
         let isGameRunning = false;
         let isWaitingForSpeech = false;
-        let isPassingObstacle = false; // Trạng thái đang nhảy vọt qua xương rồng
+        let isPassingObstacle = false;
         let animationFrameId = null;
         let recognition = null;
 
+        // --- WEB AUDIO API (Tạo âm thanh trực tiếp, không cần file ngoài) ---
+        let audioCtx = null;
+
+        function initAudio() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+        // Âm thanh khi nhảy (Tiếng vút lên)
+        function playJumpSound() {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        // Âm thanh khi trả lời ĐÚNG (Tiếng ting vui tai)
+        function playCorrectSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(523.25, now); // Nốt C5
+            osc.frequency.setValueAtTime(659.25, now + 0.1); // Nốt E5
+            osc.frequency.setValueAtTime(783.99, now + 0.2); // Nốt G5
+            gain.gain.setValueAtTime(0.1, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.35);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(now + 0.35);
+        }
+
+        // Âm thanh khi trả lời SAI / Thua (Tiếng trầm báo hiệu)
+        function playWrongSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+            gain.gain.setValueAtTime(0.15, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(now + 0.3);
+        }
+
         function requestMicAndStart() {
+            initAudio();
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
                     stream.getTracks().forEach(track => track.stop());
@@ -329,6 +390,7 @@
                 if (!this.isJumping) {
                     this.velocityY = -14;
                     this.isJumping = true;
+                    playJumpSound();
                 }
             },
             update() {
@@ -463,12 +525,9 @@
             dino.update();
             dino.draw();
 
-            // Khung cảnh đang chạy tiếp khi chưa dừng hoặc đã phát âm đúng
-            if (!isWaitingForSpeech || isPassingObstacle) {
-                obstacle.x -= 6; // Chướng ngại vật tiếp tục di chuyển
-
-                // Nếu đang trong đợt vượt qua và chướng ngại vật trôi hết khỏi màn hình bên trái
-                if (isPassingObstacle && obstacle.x < -60) {
+            if (isPassingObstacle) {
+                obstacle.x -= 6;
+                if (obstacle.x < -60) {
                     currentWordIndex++;
                     updateHUD();
 
@@ -476,18 +535,21 @@
                         endGame(true);
                         return;
                     } else {
-                        // Reset để chờ chướng ngại vật kế tiếp
                         obstacle.reset();
                         isPassingObstacle = false;
                         isWaitingForSpeech = false;
                         updateMicStatus('Chờ chướng ngại vật tiếp...', '');
                     }
                 }
+            } else if (isWaitingForSpeech) {
+                // Đang đứng chờ đọc
             } else {
-                // Đang tạm dừng chờ đọc từ vựng
-                if (obstacle.x <= obstacle.targetX && !obstacle.stopPointReached) {
-                    obstacle.stopPointReached = true;
+                if (obstacle.x <= obstacle.targetX) {
+                    obstacle.x = obstacle.targetX;
+                    isWaitingForSpeech = true;
                     startListening();
+                } else {
+                    obstacle.x -= 5;
                 }
             }
 
@@ -497,7 +559,7 @@
 
         function startListening() {
             if (!recognition) return;
-            updateMicStatus('🎙️ Đang nghe học sinh đọc...', 'listening');
+            updateMicStatus('🎙️ Đang nghe học sinh đọc từ...', 'listening');
             try {
                 recognition.start();
             } catch (e) {}
@@ -514,16 +576,17 @@
             const targetWord = vocabList[currentWordIndex];
             console.log(`Target: ${targetWord} | Spoken: ${spokenText}`);
 
-            // So sánh độ khớp từ
             if (spokenText.includes(targetWord) || targetWord.includes(spokenText)) {
                 updateMicStatus(`✨ Đúng: "${targetWord.toUpperCase()}"!`, 'correct');
                 stopListening();
+                playCorrectSound(); // 🔊 Phát âm thanh đúng
                 
-                // Mở khóa chuyển trạng thái: Khủng long nhảy & chướng ngại vật tiếp tục di chuyển
                 dino.jump();
                 isPassingObstacle = true;
+                isWaitingForSpeech = false;
             } else {
                 updateMicStatus(`❌ Chưa đúng: "${spokenText}"`, 'wrong');
+                playWrongSound(); // 🔊 Phát âm thanh báo sai
             }
         }
 
@@ -538,10 +601,12 @@
                 resultTitle.innerText = "🏆 Victory / Hoàn Thành Xuất Sắc!";
                 resultTitle.className = "result-title victory";
                 resultDesc.innerText = `Chúc mừng! Học sinh đã vượt qua toàn bộ ${vocabList.length} từ vựng!`;
+                playCorrectSound();
             } else {
                 resultTitle.innerText = "💥 Game Over!";
                 resultTitle.className = "result-title gameover";
                 resultDesc.innerText = customMessage || "Khủng long đã va phải xương rồng!";
+                playWrongSound();
             }
 
             resultScreen.classList.add('active');
