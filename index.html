@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dino Vocab Runner - Học Từ Vựng Bằng Giọng Nói</title>
+    <style>
+        :root {
+            --bg-color: #f7f9fc;
+            --primary-color: #4CAF50;
+            --primary-dark: #388E3C;
+            --danger-color: #e53935;
+            --text-color: #2c3e50;
+            --card-bg: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .game-container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .screen {
+            display: none;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .setup-screen h1 {
+            color: var(--primary-color);
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+
+        .setup-screen p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            font-size: 16px;
+            resize: vertical;
+            outline: none;
+            transition: border-color 0.3s;
+            margin-bottom: 20px;
+        }
+
+        textarea:focus {
+            border-color: var(--primary-color);
+        }
+
+        .btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 32px;
+            font-size: 18px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            background-color: #757575;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            margin-left: 10px;
+        }
+
+        .btn-secondary:hover {
+            background-color: #616161;
+        }
+
+        .hud {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .status-badge {
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            background: #e0e0e0;
+            transition: all 0.3s;
+        }
+
+        .status-badge.listening {
+            background: #ffe082;
+            color: #f57f17;
+            animation: pulse 1.5s infinite;
+        }
+
+        .status-badge.correct {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+
+        .status-badge.wrong {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        canvas {
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 70%, #90EE90 70%, #8FBC8F 100%);
+            border-radius: 12px;
+            width: 100%;
+            height: 300px;
+            display: block;
+        }
+
+        .debug-hint {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .result-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            z-index: 10;
+            justify-content: center;
+        }
+
+        .result-title {
+            font-size: 36px;
+            margin-bottom: 15px;
+        }
+
+        .result-title.victory {
+            color: var(--primary-color);
+        }
+
+        .result-title.gameover {
+            color: var(--danger-color);
+        }
+
+        .result-desc {
+            font-size: 18px;
+            margin-bottom: 25px;
+            color: #555;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- 1. Màn hình Cấu hình -->
+        <div id="setupScreen" class="screen setup-screen active">
+            <h1>🦖 Dino Vocab Runner</h1>
+            <p>Nhập danh sách từ vựng tiếng Anh cho học sinh (phân tách bằng dấu phẩy hoặc xuống dòng):</p>
+            <textarea id="vocabInput" placeholder="Nhập từ vựng ở đây...">apple, banana, cat, dog, elephant</textarea>
+            <button class="btn" onclick="requestMicAndStart()">Bắt đầu trò chơi 🚀</button>
+            <div class="debug-hint">💡 Hãy mở bằng Google Chrome và cho phép sử dụng Micro.</div>
+        </div>
+
+        <!-- 2. Màn hình Trò chơi -->
+        <div id="gameScreen" class="screen">
+            <div class="hud">
+                <div>Tiến trình: <span id="progressText">0/0</span></div>
+                <div id="micStatus" class="status-badge">Đang chuẩn bị...</div>
+            </div>
+            <canvas id="gameCanvas" width="740" height="300"></canvas>
+            <div class="debug-hint">💡 Mẹo: Nhấn phím **Space (Cách)** để test nhảy thủ công.</div>
+        </div>
+
+        <!-- 3. Màn hình Kết quả -->
+        <div id="resultScreen" class="screen result-screen">
+            <h2 id="resultTitle" class="result-title">Victory!</h2>
+            <p id="resultDesc" class="result-desc">Học sinh đã hoàn thành xuất sắc bài học!</p>
+            <div class="btn-group">
+                <button class="btn" onclick="restartGame()">Chơi lại 🔄</button>
+                <button class="btn btn-secondary" onclick="showSetup()">Cấu hình lại ⚙️</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const setupScreen = document.getElementById('setupScreen');
+        const gameScreen = document.getElementById('gameScreen');
+        const resultScreen = document.getElementById('resultScreen');
+        const vocabInput = document.getElementById('vocabInput');
+        const progressText = document.getElementById('progressText');
+        const micStatus = document.getElementById('micStatus');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let vocabList = [];
+        let currentWordIndex = 0;
+        let isGameRunning = false;
+        let isWaitingForSpeech = false;
+        let isPassingObstacle = false; // Trạng thái đang nhảy vọt qua xương rồng
+        let animationFrameId = null;
+        let recognition = null;
+
+        function requestMicAndStart() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    stream.getTracks().forEach(track => track.stop());
+                    initSpeechRecognition();
+                    startGame();
+                })
+                .catch(err => {
+                    alert("⚠️ Không thể truy cập Micro! Vui lòng cho phép quyền sử dụng micro trên Chrome.");
+                    console.error(err);
+                });
+        }
+
+        function initSpeechRecognition() {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SpeechRecognition) {
+                alert("Trình duyệt không hỗ trợ Web Speech API. Vui lòng dùng Google Chrome.");
+                return;
+            }
+
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event) => {
+                const spokenText = event.results[0][0].transcript.trim().toLowerCase();
+                checkSpeechResult(spokenText);
+            };
+
+            recognition.onerror = (event) => {
+                if (isWaitingForSpeech && isGameRunning && !isPassingObstacle) {
+                    updateMicStatus('⚠️ Không nghe rõ, hãy đọc lại...', 'wrong');
+                    setTimeout(() => startListening(), 800);
+                }
+            };
+
+            recognition.onend = () => {
+                if (isWaitingForSpeech && isGameRunning && !isPassingObstacle) {
+                    try { recognition.start(); } catch(e) {}
+                }
+            };
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && isWaitingForSpeech && isGameRunning && !isPassingObstacle) {
+                const targetWord = vocabList[currentWordIndex];
+                checkSpeechResult(targetWord);
+            }
+        });
+
+        const dino = {
+            x: 80,
+            y: 200,
+            width: 40,
+            height: 50,
+            velocityY: 0,
+            gravity: 0.8,
+            isJumping: false,
+            groundY: 200,
+            draw() {
+                ctx.fillStyle = '#4CAF50';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.fillRect(this.x + 20, this.y - 15, 25, 20);
+                ctx.fillStyle = '#FFFFFF';
+                ctx.fillRect(this.x + 35, this.y - 10, 5, 5);
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(this.x + 37, this.y - 8, 2, 2);
+                ctx.fillStyle = '#388E3C';
+                if (!this.isJumping && (Math.floor(Date.now() / 100) % 2 === 0)) {
+                    ctx.fillRect(this.x + 5, this.y + this.height, 10, 10);
+                } else {
+                    ctx.fillRect(this.x + 25, this.y + this.height, 10, 10);
+                }
+            },
+            jump() {
+                if (!this.isJumping) {
+                    this.velocityY = -14;
+                    this.isJumping = true;
+                }
+            },
+            update() {
+                if (this.isJumping) {
+                    this.y += this.velocityY;
+                    this.velocityY += this.gravity;
+                    if (this.y >= this.groundY) {
+                        this.y = this.groundY;
+                        this.isJumping = false;
+                        this.velocityY = 0;
+                    }
+                }
+            }
+        };
+
+        const obstacle = {
+            x: canvas.width + 100,
+            y: 210,
+            width: 30,
+            height: 40,
+            targetX: 280,
+            stopPointReached: false,
+            draw() {
+                ctx.fillStyle = '#2e7d32';
+                ctx.fillRect(this.x + 10, this.y, 10, this.height);
+                ctx.fillRect(this.x, this.y + 10, 10, 15);
+                ctx.fillRect(this.x + 20, this.y + 15, 10, 15);
+
+                if (vocabList[currentWordIndex]) {
+                    const word = vocabList[currentWordIndex].toUpperCase();
+                    ctx.font = 'bold 22px Arial';
+                    const textWidth = ctx.measureText(word).width;
+                    
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                    ctx.fillRect(this.x + 15 - (textWidth / 2) - 10, this.y - 45, textWidth + 20, 35);
+                    ctx.strokeStyle = '#f57f17';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(this.x + 15 - (textWidth / 2) - 10, this.y - 45, textWidth + 20, 35);
+
+                    ctx.fillStyle = '#d32f2f';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(word, this.x + 15, this.y - 20);
+                    ctx.textAlign = 'start';
+                }
+            },
+            reset() {
+                this.x = canvas.width + 100;
+                this.stopPointReached = false;
+            }
+        };
+
+        let bgOffset = 0;
+        function drawEnvironment() {
+            ctx.fillStyle = '#8FBC8F';
+            ctx.fillRect(0, 250, canvas.width, 50);
+            
+            ctx.strokeStyle = '#556B2F';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, 252);
+            ctx.lineTo(canvas.width, 252);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc((100 - bgOffset) % (canvas.width + 100), 50, 20, 0, Math.PI * 2);
+            ctx.arc((120 - bgOffset) % (canvas.width + 100), 45, 25, 0, Math.PI * 2);
+            ctx.arc((140 - bgOffset) % (canvas.width + 100), 50, 20, 0, Math.PI * 2);
+            ctx.fill();
+
+            if (isGameRunning && (!isWaitingForSpeech || isPassingObstacle)) {
+                bgOffset += 4;
+            }
+        }
+
+        function startGame() {
+            const rawInput = vocabInput.value.trim();
+            if (!rawInput) {
+                alert("Vui lòng nhập ít nhất 01 từ vựng!");
+                return;
+            }
+
+            vocabList = rawInput.split(/[\n,]+/).map(w => w.trim().toLowerCase()).filter(w => w.length > 0);
+            if (vocabList.length === 0) return;
+
+            currentWordIndex = 0;
+            isGameRunning = true;
+            isWaitingForSpeech = false;
+            isPassingObstacle = false;
+
+            setupScreen.classList.remove('active');
+            resultScreen.classList.remove('active');
+            gameScreen.classList.add('active');
+
+            obstacle.reset();
+            dino.y = dino.groundY;
+
+            updateHUD();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function restartGame() {
+            resultScreen.classList.remove('active');
+            startGame();
+        }
+
+        function showSetup() {
+            isGameRunning = false;
+            stopListening();
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+
+            resultScreen.classList.remove('active');
+            gameScreen.classList.remove('active');
+            setupScreen.classList.add('active');
+        }
+
+        function updateHUD() {
+            progressText.innerText = `${currentWordIndex}/${vocabList.length} từ`;
+        }
+
+        function updateMicStatus(text, state) {
+            micStatus.innerText = text;
+            micStatus.className = 'status-badge ' + (state || '');
+        }
+
+        function gameLoop() {
+            if (!isGameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawEnvironment();
+            dino.update();
+            dino.draw();
+
+            // Khung cảnh đang chạy tiếp khi chưa dừng hoặc đã phát âm đúng
+            if (!isWaitingForSpeech || isPassingObstacle) {
+                obstacle.x -= 6; // Chướng ngại vật tiếp tục di chuyển
+
+                // Nếu đang trong đợt vượt qua và chướng ngại vật trôi hết khỏi màn hình bên trái
+                if (isPassingObstacle && obstacle.x < -60) {
+                    currentWordIndex++;
+                    updateHUD();
+
+                    if (currentWordIndex >= vocabList.length) {
+                        endGame(true);
+                        return;
+                    } else {
+                        // Reset để chờ chướng ngại vật kế tiếp
+                        obstacle.reset();
+                        isPassingObstacle = false;
+                        isWaitingForSpeech = false;
+                        updateMicStatus('Chờ chướng ngại vật tiếp...', '');
+                    }
+                }
+            } else {
+                // Đang tạm dừng chờ đọc từ vựng
+                if (obstacle.x <= obstacle.targetX && !obstacle.stopPointReached) {
+                    obstacle.stopPointReached = true;
+                    startListening();
+                }
+            }
+
+            obstacle.draw();
+            animationFrameId = requestAnimationFrame(gameLoop);
+        }
+
+        function startListening() {
+            if (!recognition) return;
+            updateMicStatus('🎙️ Đang nghe học sinh đọc...', 'listening');
+            try {
+                recognition.start();
+            } catch (e) {}
+        }
+
+        function stopListening() {
+            if (!recognition) return;
+            try {
+                recognition.stop();
+            } catch (e) {}
+        }
+
+        function checkSpeechResult(spokenText) {
+            const targetWord = vocabList[currentWordIndex];
+            console.log(`Target: ${targetWord} | Spoken: ${spokenText}`);
+
+            // So sánh độ khớp từ
+            if (spokenText.includes(targetWord) || targetWord.includes(spokenText)) {
+                updateMicStatus(`✨ Đúng: "${targetWord.toUpperCase()}"!`, 'correct');
+                stopListening();
+                
+                // Mở khóa chuyển trạng thái: Khủng long nhảy & chướng ngại vật tiếp tục di chuyển
+                dino.jump();
+                isPassingObstacle = true;
+            } else {
+                updateMicStatus(`❌ Chưa đúng: "${spokenText}"`, 'wrong');
+            }
+        }
+
+        function endGame(isWin, customMessage) {
+            isGameRunning = false;
+            stopListening();
+
+            const resultTitle = document.getElementById('resultTitle');
+            const resultDesc = document.getElementById('resultDesc');
+
+            if (isWin) {
+                resultTitle.innerText = "🏆 Victory / Hoàn Thành Xuất Sắc!";
+                resultTitle.className = "result-title victory";
+                resultDesc.innerText = `Chúc mừng! Học sinh đã vượt qua toàn bộ ${vocabList.length} từ vựng!`;
+            } else {
+                resultTitle.innerText = "💥 Game Over!";
+                resultTitle.className = "result-title gameover";
+                resultDesc.innerText = customMessage || "Khủng long đã va phải xương rồng!";
+            }
+
+            resultScreen.classList.add('active');
+        }
+    </script>
+</body>
+</html>
